@@ -56,7 +56,6 @@
 #'
 #' summarise_trials(data, fut = 0.05, min_pos = 10)
 summarise_trials <- function(data, min_pos = 1, fut = 0) {
-
   sims <- data$sims
   args <- data$args
   args$fut <- fut
@@ -68,18 +67,18 @@ summarise_trials <- function(data, min_pos = 1, fut = 0) {
   out <- do.call("rbind", out)
 
   summ <- data.frame(
-    power         = mean(out$decision %in% c("early win", "late win")),
+    power = mean(out$decision %in% c("early win", "late win")),
     stop_futility = mean(out$decision == "stop for futility"),
-    n_avg         = mean(out$n),
-    sens          = mean(out$sens_hat),
-    spec          = mean(out$spec_hat),
-    mean_pos      = mean(out$tp + out$fn))
+    n_avg = mean(out$n),
+    sens = mean(out$sens_hat),
+    spec = mean(out$spec_hat),
+    mean_pos = mean(out$tp + out$fn)
+  )
 
   print(with(out, table(decision, n, useNA = "i")))
   cat("\n")
 
   return(summ)
-
 }
 
 #' @title Evaluate a single trial
@@ -108,20 +107,19 @@ summarise_trials <- function(data, min_pos = 1, fut = 0) {
 #'   \item{\code{no stopping}:} The trial progressed all the way to the final
 #'   sample size look and did not trigger any stopping rules or other
 #'   constraints.
-#'   \item{\code{no stopping}:} The trial progressed all the way to the final
-#'   sample size look and did not trigger any stopping rules, however the number
-#'   of reference positive cases was less than the minimum constrain
-#'   (\code{min_pos}).
+#'   \item{\code{no stopping - insufficient positive cases}:} The trial
+#'   progressed all the way to the final sample size look and did not trigger
+#'   any stopping rules, however the number of reference positive cases was
+#'   less than the minimum constraint (\code{min_pos}).
 #' }
 #'
 #' @noRd
 evaluate_trial <- function(x, args) {
-
   n_looks <- nrow(x)
   pass <- 0
   futile <- 0
 
-  for (i in 1:n_looks) {
+  for (i in seq_len(n_looks)) {
     if (args$min_pos > (x$tp[i] + x$fn[i])) {
       if (i == n_looks) {
         decision <- "no stopping - insufficient positive cases"
@@ -131,10 +129,12 @@ evaluate_trial <- function(x, args) {
       }
     }
     if (args$endpoint == "both") {
-      if ((x$pp_sens[i] >= args$succ_sens) & (x$pp_spec[i] >= args$succ_spec)) {
+      if (
+        (x$pp_sens[i] >= args$succ_sens) && (x$pp_spec[i] >= args$succ_spec)
+      ) {
         decision <- ifelse(i < n_looks, "early win", "late win")
         break
-      } else if ((x$ppp_succ_both[i] < args$fut) & (i < n_looks)) {
+      } else if ((x$ppp_succ_both[i] < args$fut) && (i < n_looks)) {
         decision <- "stop for futility"
         break
       } else {
@@ -144,7 +144,7 @@ evaluate_trial <- function(x, args) {
       if (x$pp_sens[i] >= args$succ_sens) {
         decision <- ifelse(i < n_looks, "early win", "late win")
         break
-      } else if ((x$ppp_succ_sens[i] < args$fut) & (i < n_looks)) {
+      } else if ((x$ppp_succ_sens[i] < args$fut) && (i < n_looks)) {
         decision <- "stop for futility"
         break
       } else {
@@ -154,7 +154,7 @@ evaluate_trial <- function(x, args) {
       if (x$pp_spec[i] >= args$succ_spec) {
         decision <- ifelse(i < n_looks, "early win", "late win")
         break
-      } else if ((x$ppp_succ_spec[i] < args$fut) & (i < n_looks)) {
+      } else if ((x$ppp_succ_spec[i] < args$fut) && (i < n_looks)) {
         decision <- "stop for futility"
         break
       } else {
@@ -165,5 +165,4 @@ evaluate_trial <- function(x, args) {
 
   x$decision <- decision
   x[i, ]
-
 }

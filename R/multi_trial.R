@@ -1,3 +1,6 @@
+# Suppress R CMD check NOTE for foreach iteration variable
+utils::globalVariables("x")
+
 #' @title Simulate and analyse multiple trials
 #'
 #' @description Multiple trials and simulated and analysed up to the final
@@ -10,25 +13,32 @@
 #' @param prev_true scalar. True assumed prevalence as measured by the
 #'   gold-standard reference test (must be between 0 and 1).
 #' @param endpoint character. The endpoint(s) that must meet a performance goal
-#'   criterion. The default is \code{code = "both"}, which means that the
+#'   criterion. The default is \code{endpoint = "both"}, which means that the
 #'   endpoint is based simultaneously on sensitivity and specificity.
-#'   Alternative options are to specify \code{code = "sens"} or \code{code =
-#'   "spec"} for sensitivity and specificity, respectively. If only a single
+#'   Alternative options are to specify \code{endpoint = "sens"} or
+#'   \code{endpoint = "spec"} for sensitivity and specificity, respectively.
+#'   If only a single
 #'   endpoint is selected (e.g. sensitivity), then the PG and success
 #'   probability threshold of the other statistic are set to 1, and ignored for
 #'   later analysis.
 #' @param sens_pg scalar. Performance goal (PG) for the sensitivity endpoint,
-#'   such that the the posterior probability that the PG is exceeded is
+#'   such that the posterior probability that the PG is exceeded is
 #'   calculated. Must be between 0 and 1.
 #' @param spec_pg scalar. Performance goal (PG) for the specificity endpoint,
-#'   such that the the posterior probability that the PG is exceeded is
+#'   such that the posterior probability that the PG is exceeded is
 #'   calculated. Must be between 0 and 1.
-#' @param prior_sens vector. A vector of length 2 with the prior shape
-#'   parameters for the sensitivity Beta distribution.
-#' @param prior_spec vector. A vector of length 2 with the prior shape
-#'   parameters for the specificity Beta distribution.
-#' @param prior_prev vector. A vector of length 2 with the prior shape
-#'   parameters for the prevalence Beta distribution.
+#' @param prior_sens vector. A vector of length 2 specifying the shape
+#'   parameters \eqn{(\alpha, \beta)} of the Beta prior for sensitivity.
+#'   \code{c(1, 1)} gives a uniform (non-informative) prior. \code{c(0.1, 0.1)}
+#'   is a near-Jeffreys prior that is bimodal, placing most mass near 0 and 1;
+#'   this can make the posterior sensitive to early data. An informative prior
+#'   derived from a pilot study is recommended when available.
+#' @param prior_spec vector. A vector of length 2 specifying the shape
+#'   parameters \eqn{(\alpha, \beta)} of the Beta prior for specificity. See
+#'   \code{prior_sens} for guidance on prior choice.
+#' @param prior_prev vector. A vector of length 2 specifying the shape
+#'   parameters \eqn{(\alpha, \beta)} of the Beta prior for prevalence. See
+#'   \code{prior_sens} for guidance on prior choice.
 #' @param succ_sens scalar. Probability threshold for the sensitivity to exceed
 #'   in order to declare a success. Must be between 0 and 1.
 #' @param succ_spec scalar. Probability threshold for the specificity to exceed
@@ -40,6 +50,9 @@
 #'   Beta-Binomial distribution.
 #' @param n_trials integer. The number of clinical trials to simulate overall,
 #'   which will be used to evaluate the operating characteristics.
+#' @param seed integer. Optional random seed passed to \code{\link[base]{set.seed}}
+#'   before simulations begin, to ensure reproducibility. Default is \code{NULL}
+#'   (no seed set).
 #' @param ncores integer. The number of cores to use for parallel processing. If
 #'   `ncores` is missing, it defaults to the maximum number of cores available
 #'   (spare 1).
@@ -122,10 +135,12 @@
 #' @section Parallelization:
 #'
 #' To use multiple cores (where available), the argument \code{ncores} can be
-#' increased from the default of 1. On UNIX machines (including macOS),
-#' parallelization is performed using the \code{\link[parallel]{mclapply}}
-#' function with \code{ncores} \eqn{>1}. On Windows machines, parallel
-#' processing is implemented via the \code{\link[foreach]{foreach}} function.
+#' increased from the default of 1. Parallelization uses
+#' \code{\link[doParallel]{registerDoParallel}} with a PSOCK cluster, which
+#' works on all platforms including Windows. The
+#' \code{\link[doRNG]{\%dorng\%}} operator from the \pkg{doRNG} package is
+#' used in place of the standard \code{\%dopar\%}, ensuring that results are
+#' fully reproducible across all backends when a \code{seed} is supplied.
 #'
 #' @return A list containing a data frame with rows for each stage of the trial
 #'   (i.e. each sample size look), irrespective of whether the trial meets the
@@ -188,10 +203,11 @@
 #'   ncores = 1
 #' )
 #'
-#' @importFrom parallel detectCores
-#' @importFrom pbmcapply pbmclapply
+#' @importFrom parallel detectCores makeCluster stopCluster
 #' @importFrom doParallel registerDoParallel
-#' @importFrom foreach foreach registerDoSEQ '%dopar%'
+#' @importFrom foreach foreach registerDoSEQ
+#' @importFrom doRNG '%dorng%'
+#' @importFrom utils txtProgressBar setTxtProgressBar
 #'
 #' @export
 multi_trial <- function(
@@ -209,9 +225,9 @@ multi_trial <- function(
   n_at_looks,
   n_mc = 10000,
   n_trials = 1000,
+  seed = NULL,
   ncores
 ) {
-
   Call <- match.call()
 
   # Check: missing 'ncores' defaults to maximum available (spare 1)
@@ -222,113 +238,139 @@ multi_trial <- function(
   # Check: cannot specify <1 core
   if (ncores < 1) {
     warning("Must use at least 1 core... setting ncores = 1")
+    ncores <- 1L
   }
 
   # Check: endpoint selection
   if (endpoint == "both") {
     # Both
-    if (is.null(sens_pg) | is.null(spec_pg) |
-        missing(sens_pg) | missing(spec_pg)) {
+    if (
+      is.null(sens_pg) ||
+        is.null(spec_pg) ||
+        missing(sens_pg) ||
+        missing(spec_pg)
+    ) {
       stop("Missing performance goal argument")
     }
-    if (is.null(succ_sens) | is.null(succ_spec) |
-        missing(succ_sens) | missing(succ_spec)) {
+    if (
+      is.null(succ_sens) ||
+        is.null(succ_spec) ||
+        missing(succ_sens) ||
+        missing(succ_spec)
+    ) {
       stop("Missing probability threshold argument")
     }
   } else if (endpoint == "sens") {
     # Sensitivity only
-    if (is.null(sens_pg) | missing(sens_pg) | is.na(sens_pg)) {
+    if (is.null(sens_pg) || missing(sens_pg) || is.na(sens_pg)) {
       stop("Missing performance goal argument")
     }
     if (!is.null(spec_pg)) {
       warning("spec_pg is being ignored")
     }
-    spec_pg <- 1   # can never exceed this
+    spec_pg <- 1 # can never exceed this
     succ_spec <- 1 # can never exceed this
   } else if (endpoint == "spec") {
     # Specificity only
-    if (is.null(spec_pg) | missing(spec_pg) | is.na(spec_pg)) {
+    if (is.null(spec_pg) || missing(spec_pg) || is.na(spec_pg)) {
       stop("Missing performance goal argument")
     }
     if (!is.null(sens_pg)) {
       warning("sens_pg is being ignored")
     }
-    sens_pg <- 1   # can never exceed this
+    sens_pg <- 1 # can never exceed this
     succ_sens <- 1 # can never exceed this
   } else {
     stop("endpoint should be either 'both', 'sens', or 'spec'")
   }
 
   # Check: true values specified
-  if (missing(sens_true) | missing(spec_true) | missing(prev_true)) {
-    stop("True values must be provided for for sensitivity, specificity, and prevalence")
+  if (missing(sens_true) || missing(spec_true) || missing(prev_true)) {
+    stop(
+      "True values must be provided for sensitivity, specificity, and prevalence"
+    )
   }
 
   # Check: prior distributions specified
-  if (missing(prior_sens) | missing(prior_spec) | missing(prior_prev) |
-      is.null(prior_sens) | is.null(prior_spec) | is.null(prior_prev)) {
-    stop("Prior distribution parameters must be provided for sensitivity, specificity, and prevalence")
+  if (
+    missing(prior_sens) ||
+      missing(prior_spec) ||
+      missing(prior_prev) ||
+      is.null(prior_sens) ||
+      is.null(prior_spec) ||
+      is.null(prior_prev)
+  ) {
+    stop(
+      "Prior distribution parameters must be provided for sensitivity, specificity, and prevalence"
+    )
   }
 
   single_trial_wrapper <- function(x) {
     single_trial(
-      sens_true  = sens_true,
-      spec_true  = spec_true,
-      prev_true  = prev_true,
-      sens_pg    = sens_pg,
-      spec_pg    = spec_pg,
+      sens_true = sens_true,
+      spec_true = spec_true,
+      prev_true = prev_true,
+      sens_pg = sens_pg,
+      spec_pg = spec_pg,
       prior_sens = prior_sens,
       prior_spec = prior_spec,
       prior_prev = prior_prev,
-      succ_sens  = succ_sens,
-      succ_spec  = succ_spec,
+      succ_sens = succ_sens,
+      succ_spec = succ_spec,
       n_at_looks = n_at_looks,
-      n_mc       = n_mc)
+      n_mc = n_mc
+    )
   }
 
-  if (.Platform$OS.type == "windows") {
-    # Windows systems
-    if (ncores == 1L) {
-      sims <- lapply(X = 1:n_trials,
-                     FUN = single_trial_wrapper)
-    } else {
-      doParallel::registerDoParallel(cores = ncores)
-      sims <- foreach(x = 1:n_trials, .packages = 'adaptDiag',
-                      .combine = rbind) %dopar% {
-                        single_trial_wrapper()
-                      }
-      registerDoSEQ()
-    }
+  # Generate per-trial seeds in the parent process so results are reproducible
+  # regardless of backend. .options.RNG passes the seed to %dorng%.
+  rng_seed <- if (!is.null(seed)) seed else NULL
+
+  if (ncores > 1L) {
+    cl <- makeCluster(ncores)
+    registerDoParallel(cl)
+    on.exit(stopCluster(cl), add = TRUE)
+    on.exit(registerDoSEQ(), add = TRUE)
   } else {
-    # *nix systems
-    sims <- pbmclapply(X = 1:n_trials,
-                       FUN = single_trial_wrapper,
-                       mc.cores = ncores)
-
-    sims <- do.call("rbind", sims)
+    registerDoSEQ()
   }
+
+  pb <- txtProgressBar(min = 1, max = n_trials, style = 3)
+  on.exit(close(pb), add = TRUE)
+  progress <- function(n) setTxtProgressBar(pb, n)
+
+  sims <- foreach(
+    x = seq_len(n_trials),
+    .combine = rbind,
+    .packages = "adaptDiag",
+    .options.RNG = rng_seed,
+    .options.snow = list(progress = progress)
+  ) %dorng%
+    {
+      single_trial_wrapper(x)
+    }
 
   sims$trial <- rep(1:n_trials, each = length(n_at_looks))
 
-  args <- list("sens_true"  = sens_true,
-               "spec_true"  = spec_true,
-               "prev_true"  = prev_true,
-               "endpoint"   = endpoint,
-               "sens_pg"    = sens_pg,
-               "spec_pg"    = spec_pg,
-               "prior_sens" = prior_sens,
-               "prior_spec" = prior_spec,
-               "prior_prev" = prior_prev,
-               "succ_sens"  = succ_sens,
-               "succ_spec"  = succ_spec,
-               "n_at_looks" = n_at_looks,
-               "n_mc"       = n_mc,
-               "n_trials"   = n_trials)
+  args <- list(
+    "sens_true" = sens_true,
+    "spec_true" = spec_true,
+    "prev_true" = prev_true,
+    "endpoint" = endpoint,
+    "sens_pg" = sens_pg,
+    "spec_pg" = spec_pg,
+    "prior_sens" = prior_sens,
+    "prior_spec" = prior_spec,
+    "prior_prev" = prior_prev,
+    "succ_sens" = succ_sens,
+    "succ_spec" = succ_spec,
+    "n_at_looks" = n_at_looks,
+    "n_mc" = n_mc,
+    "n_trials" = n_trials,
+    "seed" = seed
+  )
 
-  out <- list(sims = sims,
-              call = Call,
-              args = args)
+  out <- list(sims = sims, call = Call, args = args)
 
   invisible(out)
-
 }

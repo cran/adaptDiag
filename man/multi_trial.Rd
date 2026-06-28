@@ -19,6 +19,7 @@ multi_trial(
   n_at_looks,
   n_mc = 10000,
   n_trials = 1000,
+  seed = NULL,
   ncores
 )
 }
@@ -31,30 +32,37 @@ multi_trial(
 gold-standard reference test (must be between 0 and 1).}
 
 \item{endpoint}{character. The endpoint(s) that must meet a performance goal
-criterion. The default is \code{code = "both"}, which means that the
+criterion. The default is \code{endpoint = "both"}, which means that the
 endpoint is based simultaneously on sensitivity and specificity.
-Alternative options are to specify \code{code = "sens"} or \code{code =
-"spec"} for sensitivity and specificity, respectively. If only a single
+Alternative options are to specify \code{endpoint = "sens"} or
+\code{endpoint = "spec"} for sensitivity and specificity, respectively.
+If only a single
 endpoint is selected (e.g. sensitivity), then the PG and success
 probability threshold of the other statistic are set to 1, and ignored for
 later analysis.}
 
 \item{sens_pg}{scalar. Performance goal (PG) for the sensitivity endpoint,
-such that the the posterior probability that the PG is exceeded is
+such that the posterior probability that the PG is exceeded is
 calculated. Must be between 0 and 1.}
 
 \item{spec_pg}{scalar. Performance goal (PG) for the specificity endpoint,
-such that the the posterior probability that the PG is exceeded is
+such that the posterior probability that the PG is exceeded is
 calculated. Must be between 0 and 1.}
 
-\item{prior_sens}{vector. A vector of length 2 with the prior shape
-parameters for the sensitivity Beta distribution.}
+\item{prior_sens}{vector. A vector of length 2 specifying the shape
+parameters \eqn{(\alpha, \beta)} of the Beta prior for sensitivity.
+\code{c(1, 1)} gives a uniform (non-informative) prior. \code{c(0.1, 0.1)}
+is a near-Jeffreys prior that is bimodal, placing most mass near 0 and 1;
+this can make the posterior sensitive to early data. An informative prior
+derived from a pilot study is recommended when available.}
 
-\item{prior_spec}{vector. A vector of length 2 with the prior shape
-parameters for the specificity Beta distribution.}
+\item{prior_spec}{vector. A vector of length 2 specifying the shape
+parameters \eqn{(\alpha, \beta)} of the Beta prior for specificity. See
+\code{prior_sens} for guidance on prior choice.}
 
-\item{prior_prev}{vector. A vector of length 2 with the prior shape
-parameters for the prevalence Beta distribution.}
+\item{prior_prev}{vector. A vector of length 2 specifying the shape
+parameters \eqn{(\alpha, \beta)} of the Beta prior for prevalence. See
+\code{prior_sens} for guidance on prior choice.}
 
 \item{succ_sens}{scalar. Probability threshold for the sensitivity to exceed
 in order to declare a success. Must be between 0 and 1.}
@@ -71,6 +79,10 @@ Beta-Binomial distribution.}
 
 \item{n_trials}{integer. The number of clinical trials to simulate overall,
 which will be used to evaluate the operating characteristics.}
+
+\item{seed}{integer. Optional random seed passed to \code{\link[base]{set.seed}}
+before simulations begin, to ensure reproducibility. Default is \code{NULL}
+(no seed set).}
 
 \item{ncores}{integer. The number of cores to use for parallel processing. If
 `ncores` is missing, it defaults to the maximum number of cores available
@@ -202,10 +214,12 @@ the probability for both endpoints simultaneously.
 
 
 To use multiple cores (where available), the argument \code{ncores} can be
-increased from the default of 1. On UNIX machines (including macOS),
-parallelization is performed using the \code{\link[parallel]{mclapply}}
-function with \code{ncores} \eqn{>1}. On Windows machines, parallel
-processing is implemented via the \code{\link[foreach]{foreach}} function.
+increased from the default of 1. Parallelization uses
+\code{\link[doParallel]{registerDoParallel}} with a PSOCK cluster, which
+works on all platforms including Windows. The
+\code{\link[doRNG]{\%dorng\%}} operator from the \pkg{doRNG} package is
+used in place of the standard \code{\%dopar\%}, ensuring that results are
+fully reproducible across all backends when a \code{seed} is supplied.
 }
 
 \examples{

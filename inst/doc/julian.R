@@ -1,35 +1,36 @@
-## ---- include = FALSE---------------------------------------------------------
+## ----include = FALSE----------------------------------------------------------
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
 )
 options(rmarkdown.html_vignette.check_title = FALSE)
 
-## ----param_pg, eval=FALSE-----------------------------------------------------
-#  sens_pg <- 0.7
-#  spec_pg <- 0.9
-#  
-#  succ_sens <- 0.985,
-#  succ_spec <- 0.985,
-#  
-#  endpoint <- "both"
-
-## ----param_true, eval=FALSE---------------------------------------------------
-#  sens_true <- 0.824
-#  spec_true <- 0.963
-#  prev_true <- 0.2
-
-## ----priors, eval=FALSE-------------------------------------------------------
-#  prior_sens <- c(0.1, 0.1)
-#  prior_spec <- c(0.1, 0.1)
-#  prior_prev <- c(0.1, 0.1)
-
-## ----sample_size, eval=FALSE--------------------------------------------------
-#  n_at_looks <- seq.int(200, 700, by = 50)
-
-## ----simulate, cache=TRUE-----------------------------------------------------
+## ----setup--------------------------------------------------------------------
 library(adaptDiag)
 
+## ----param_pg, eval=FALSE-----------------------------------------------------
+# sens_pg <- 0.7
+# spec_pg <- 0.9
+# 
+# succ_sens <- 0.985
+# succ_spec <- 0.985
+# 
+# endpoint <- "both"
+
+## ----param_true, eval=FALSE---------------------------------------------------
+# sens_true <- 0.824
+# spec_true <- 0.963
+# prev_true <- 0.2
+
+## ----priors, eval=FALSE-------------------------------------------------------
+# prior_sens <- c(0.1, 0.1)
+# prior_spec <- c(0.1, 0.1)
+# prior_prev <- c(0.1, 0.1)
+
+## ----sample_size, eval=FALSE--------------------------------------------------
+# n_at_looks <- seq.int(200, 700, by = 50)
+
+## ----simulate, cache=TRUE-----------------------------------------------------
 fit_power <- multi_trial(
   sens_true = 0.824,
   spec_true = 0.963,
@@ -45,6 +46,7 @@ fit_power <- multi_trial(
   n_at_looks = seq(200, 700, 50),
   n_mc = 10000,
   n_trials = 200,
+  seed = 1234L,
   ncores = 1L)
 
 ## ----op_chars-----------------------------------------------------------------
@@ -60,7 +62,7 @@ summarise_trials(fit_type1, min_pos = 30, fut = 0.05)
 ## ----grid, cache=FALSE, results=FALSE-----------------------------------------
 tab <- NULL
 
-for (i in 1:length(prev_true_vec)) {
+for (i in seq_along(prev_true_vec)) {
   fit_power_i <- multi_trial(
   sens_true = 0.824,
   spec_true = 0.963,
@@ -76,6 +78,7 @@ for (i in 1:length(prev_true_vec)) {
   n_at_looks = seq(200, 700, 50),
   n_mc = 1000,
   n_trials = 100,
+  seed = 1234L,
   ncores = 1L)
   
   out <- summarise_trials(fit_power_i, min_pos = 30, fut = 0.05)
